@@ -1,10 +1,26 @@
-# Laboratorium
+# 3D Skaner - Mobilne Skanowanie
 
-## Web 3D Scanner (Android)
+Aplikacja webowa do skanowania obiektów kamerą smartfona i tworzenia modeli 3D.
+Zaprojektowana jako mobile-first PWA, działa bezpośrednio w przeglądarce Android.
 
-Projekt znajduje się w katalogu `web-3d-scanner` i jest napisany w TypeScript.
+## Technologie
 
-### Szybki start
+- **Three.js** - renderowanie chmury punktów 3D z kontrolkami dotykowymi (OrbitControls)
+- **OpenCV.js** - detekcja cech ORB, dopasowywanie, macierz istotna, triangulacja
+- **WebRTC** - dostęp do kamery urządzenia (getUserMedia)
+- **TypeScript + Vite** - narzędzia deweloperskie i budowanie
+- **PWA** - manifest umożliwiający instalację na ekranie głównym
+
+## Funkcje
+
+| Zakładka | Opis |
+|----------|------|
+| **Skanuj** | Podgląd kamery z guideiem, przycisk migawki do zdjęć, tryb skanowania na żywo |
+| **Galeria** | Siatka miniatur zdjęć, usuwanie pojedynczych, przetwarzanie wsadowe par zdjęć |
+| **Model 3D** | Widok 3D z kontrolkami dotykowymi (obrót / zoom / przesuwanie), eksport PLY/OBJ |
+| **Opcje** | Regulacja interwału, progu dopasowania i limitu dopasowań na klatkę |
+
+## Szybki start
 
 ```bash
 cd web-3d-scanner
@@ -12,30 +28,29 @@ npm install
 npm run dev -- --host
 ```
 
-W telefonie Android otwórz:
+Otwórz w telefonie Android adres wyświetlony w terminalu (np. `http://192.168.x.x:5173`).
 
-- `http://127.0.0.1:5173`
+## Tryby pracy
 
-### Co robi aktualne MVP
+### Zdjęcia + przetwarzanie wsadowe
+1. W zakładce **Skanuj** rób zdjęcia obiektu z różnych kątów (12-24 zdjęcia)
+2. Przejdź do **Galeria** i kliknij **Przetwórz zdjęcia na model 3D**
+3. Oglądaj wynik w **Model 3D**
 
-- uruchamia kamerę (`getUserMedia`)
-- wykrywa punkty ORB w kolejnych klatkach (OpenCV.js)
-- dopasowuje cechy i estymuje ruch kamery (`findEssentialMat`, `recoverPose`)
-- wykonuje triangulację i rysuje chmurę punktów 3D (Three.js)
-- ma mobilny interfejs z zakładkami: `Podgląd`, `Ustawienia`, `Widok 3D`
+### Skanowanie na żywo
+1. W zakładce **Skanuj** kliknij **Start**
+2. Powoli obracaj kamerę wokół obiektu
+3. Chmura punktów buduje się w czasie rzeczywistym
 
-### Rozwiązywanie problemów (Android)
+## Eksport
 
-- Jeśli przycisk `Start skanowania` nie reaguje, sprawdź czy:
-  - uruchamiasz aplikację z `http://127.0.0.1:5173` (nie z przypadkowego URL),
-  - przeglądarka ma przyznane uprawnienie do kamery,
-  - po zmianie uprawnień odświeżyłeś stronę.
-- W aplikacji komunikat błędu jest widoczny na dole ekranu w polu statusu.
+Model 3D można wyeksportować w formatach:
+- **PLY** (ASCII) - z kolorami wierzchołków
+- **OBJ** - wierzchołki bez tekstury
 
-### Uwaga
+## Wskazówki
 
-To jest wersja prototypowa. Najlepsze wyniki uzyskasz przy:
-
-- dobrym oświetleniu
-- obiekcie z teksturą (nie gładkie, jednolite powierzchnie)
-- powolnym ruchu kamery
+- Dobre oświetlenie
+- Obiekt z wyraźną teksturą (nie gładki/jednolity)
+- Powolny, stabilny ruch kamery
+- 12-24 zdjęć równomiernie dookoła obiektu
