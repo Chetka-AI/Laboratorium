@@ -68,6 +68,8 @@ interface ReconstructionResult {
   inliers: number;
 }
 
+type ProcessingMode = "lite" | "opencv";
+
 interface ScanSettings {
   intervalMs: number;
   matchDistance: number;
@@ -159,6 +161,7 @@ app.innerHTML = `
             <li><span>Obsługa getUserMedia</span><strong id="diag-media">-</strong></li>
             <li><span>Stan uprawnień kamery</span><strong id="diag-permission">-</strong></li>
             <li><span>Kamera aktywna</span><strong id="diag-camera-live">-</strong></li>
+            <li><span>Tryb analizy</span><strong id="diag-mode">-</strong></li>
             <li><span>OpenCV</span><strong id="diag-opencv">-</strong></li>
             <li><span>WebGL / Three</span><strong id="diag-webgl">-</strong></li>
           </ul>
@@ -200,6 +203,7 @@ const diagSecure = requireElement<HTMLElement>("#diag-secure");
 const diagMedia = requireElement<HTMLElement>("#diag-media");
 const diagPermission = requireElement<HTMLElement>("#diag-permission");
 const diagCameraLive = requireElement<HTMLElement>("#diag-camera-live");
+const diagMode = requireElement<HTMLElement>("#diag-mode");
 const diagOpenCv = requireElement<HTMLElement>("#diag-opencv");
 const diagWebGl = requireElement<HTMLElement>("#diag-webgl");
 const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab-btn"));
@@ -222,12 +226,14 @@ let isStarting = false;
 let isProcessingFrame = false;
 let stream: MediaStream | null = null;
 let previousFrame: FrameFeatures | null = null;
+let previousLiteGray: Uint8Array | null = null;
 let cvApi: CvRuntime | null = null;
 let cvLoadPromise: Promise<CvRuntime> | null = null;
 let cvLoadError: string | null = null;
 let orb: CvORB | null = null;
 let matcher: CvBFMatcher | null = null;
 let threeState: ThreeCloudState | null = null;
+let processingMode: ProcessingMode = "lite";
 
 setupTabs();
 setupSettings();
@@ -399,7 +405,7 @@ async function startScanning(): Promise<void> {
 
   isStarting = true;
   updateControlState();
-  setStatus("Krok 1/3: proszę o dostęp do kamery...");
+  setStatus("Krok 1/2: proszę o dostęp do kamery...");
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -418,18 +424,23 @@ async function startScanning(): Promise<void> {
     setupFrameSize(video.videoWidth || 640, video.videoHeight || 480);
     appendDiagnosticLine("Kamera uruchomiona.");
 
-    setStatus("Krok 2/3: ładowanie OpenCV.js...");
-    const runtime = await ensureCvRuntime(35000);
-    if (orb === null) {
-      orb = new runtime.ORB(1600);
+    if (cvApi !== null && orb !== null && matcher !== null) {
+      processingMode = "opencv";
+      setStatus("Krok 2/2: start analizy OpenCV...");
+      appendDiagnosticLine("Start analizy w trybie OpenCV.");
+    } else {
+      processingMode = "lite";
+      setStatus("Krok 2/2: start analizy lite (bez OpenCV)...");
+      appendDiagnosticLine("Start analizy w trybie lite (OpenCV niezaładowane).");
     }
-    if (matcher === null) {
-      matcher = new runtime.BFMatcher(runtime.NORM_HAMMING, true);
-    }
-    setStatus("Krok 3/3: start analizy obrazu...");
+
     restartCaptureLoop();
     await processFrame();
-    setStatus("Skanowanie aktywne. Ruszaj kamerą powoli.");
+    if (processingMode === "opencv") {
+      setStatus("Skanowanie aktywne (OpenCV). Ruszaj kamerą powoli.");
+    } else {
+      setStatus("Skanowanie aktywne (tryb lite). OpenCV możesz włączyć w Diagnostyce.");
+    }
   } catch (error) {
     stopScanning();
     const message = `Błąd startu: ${errorToMessage(error)}`;
@@ -461,6 +472,7 @@ function stopScanning(message?: string): void {
 
   releaseFrame(previousFrame);
   previousFrame = null;
+  previousLiteGray = null;
   isProcessingFrame = false;
   clearOverlay();
   updateControlState();
@@ -481,7 +493,7 @@ function restartCaptureLoop(): void {
 }
 
 async function processFrame(): Promise<void> {
-  if (isProcessingFrame || cvApi === null || orb === null || matcher === null) {
+  if (isProcessingFrame) {
     return;
   }
   if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -490,31 +502,121 @@ async function processFrame(): Promise<void> {
 
   isProcessingFrame = true;
   try {
-    const currentFrame = extractFeatures(cvApi, orb);
-    if (currentFrame === null) {
-      return;
-    }
-
-    let reconstruction: ReconstructionResult | null = null;
-    if (previousFrame !== null) {
-      reconstruction = reconstructFromPair(cvApi, matcher, previousFrame, currentFrame);
-    }
-
-    if (reconstruction !== null) {
-      drawTrackedPoints(reconstruction.trackedPoints);
-      addToPointCloud(reconstruction.triangulatedPoints);
-      setStatus(
-        `Inliers: ${reconstruction.inliers}, punktów 3D: ${Math.floor(cloudData.length / 3)}`
-      );
+    if (processingMode === "opencv" && cvApi !== null && orb !== null && matcher !== null) {
+      try {
+        processFrameOpenCv(cvApi, orb, matcher);
+      } catch (error) {
+        appendDiagnosticLine(`Błąd OpenCV, przełączam na tryb lite: ${errorToMessage(error)}`);
+        processingMode = "lite";
+        releaseFrame(previousFrame);
+        previousFrame = null;
+        processFrameLite();
+      }
     } else {
-      clearOverlay();
+      processFrameLite();
     }
-
-    releaseFrame(previousFrame);
-    previousFrame = currentFrame;
   } finally {
     isProcessingFrame = false;
   }
+}
+
+function processFrameOpenCv(cvApiRef: CvRuntime, orbRef: CvORB, matcherRef: CvBFMatcher): void {
+  const currentFrame = extractFeatures(cvApiRef, orbRef);
+  if (currentFrame === null) {
+    return;
+  }
+
+  let reconstruction: ReconstructionResult | null = null;
+  if (previousFrame !== null) {
+    reconstruction = reconstructFromPair(cvApiRef, matcherRef, previousFrame, currentFrame);
+  }
+
+  if (reconstruction !== null) {
+    drawTrackedPoints(reconstruction.trackedPoints);
+    addToPointCloud(reconstruction.triangulatedPoints);
+    setStatus(
+      `OpenCV | Inliers: ${reconstruction.inliers}, punktów 3D: ${Math.floor(cloudData.length / 3)}`
+    );
+  } else {
+    clearOverlay();
+  }
+
+  releaseFrame(previousFrame);
+  previousFrame = currentFrame;
+  previousLiteGray = null;
+}
+
+function processFrameLite(): void {
+  if (captureCanvas.width === 0 || captureCanvas.height === 0) {
+    return;
+  }
+
+  captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+  const width = captureCanvas.width;
+  const height = captureCanvas.height;
+  const imageData = captureCtx.getImageData(0, 0, width, height).data;
+  const gray = new Uint8Array(width * height);
+
+  for (let src = 0, dst = 0; src < imageData.length; src += 4, dst += 1) {
+    const r = imageData[src];
+    const g = imageData[src + 1];
+    const b = imageData[src + 2];
+    gray[dst] = (77 * r + 150 * g + 29 * b) >> 8;
+  }
+
+  if (previousLiteGray === null || previousLiteGray.length !== gray.length) {
+    previousLiteGray = gray;
+    clearOverlay();
+    setStatus("Tryb lite: zbieram pierwszą klatkę odniesienia...");
+    return;
+  }
+
+  const trackedPoints: Array<{ x: number; y: number }> = [];
+  const cloudPoints: number[] = [];
+  const step = 6;
+  const diffThreshold = Math.max(10, Math.floor(settings.matchDistance / 2));
+  const maxPoints = settings.maxMatches;
+
+  for (let y = 2; y < height - 2; y += step) {
+    for (let x = 2; x < width - 2; x += step) {
+      const idx = y * width + x;
+      const diff = Math.abs(gray[idx] - previousLiteGray[idx]);
+      if (diff < diffThreshold) {
+        continue;
+      }
+
+      const gx = Math.abs(gray[idx + 1] - gray[idx - 1]);
+      const gy = Math.abs(gray[idx + width] - gray[idx - width]);
+      const score = diff + 0.35 * (gx + gy);
+      if (score < diffThreshold + 12) {
+        continue;
+      }
+
+      trackedPoints.push({ x, y });
+
+      const nx = (x / width - 0.5) * 2;
+      const ny = (y / height - 0.5) * 2;
+      const nz = -(0.2 + score / 255) * 0.8;
+      cloudPoints.push(nx, -ny, nz);
+
+      if (trackedPoints.length >= maxPoints) {
+        break;
+      }
+    }
+    if (trackedPoints.length >= maxPoints) {
+      break;
+    }
+  }
+
+  drawTrackedPoints(trackedPoints);
+  addToPointCloud(cloudPoints);
+  previousLiteGray = gray;
+  releaseFrame(previousFrame);
+  previousFrame = null;
+
+  setStatus(
+    `Tryb lite | punkty ruchu: ${trackedPoints.length}, punktów 3D: ${Math.floor(cloudData.length / 3)}`
+  );
 }
 
 function extractFeatures(cvApiRef: CvRuntime, orbRef: CvORB): FrameFeatures | null {
@@ -866,9 +968,21 @@ async function runCameraPermissionTest(): Promise<void> {
 async function runOpenCvTest(): Promise<void> {
   setStatus("Test OpenCV: ładowanie...");
   try {
-    await ensureCvRuntime(35000);
-    setStatus("Test OpenCV: OK.");
-    appendDiagnosticLine("OpenCV: test zakończony sukcesem.");
+    const runtime = await ensureCvRuntime(35000);
+    if (orb === null) {
+      orb = new runtime.ORB(1600);
+    }
+    if (matcher === null) {
+      matcher = new runtime.BFMatcher(runtime.NORM_HAMMING, true);
+    }
+
+    processingMode = "opencv";
+    previousLiteGray = null;
+    releaseFrame(previousFrame);
+    previousFrame = null;
+
+    setStatus("OpenCV gotowe. Włączony tryb OpenCV.");
+    appendDiagnosticLine("OpenCV: test OK, aktywowano tryb OpenCV.");
   } catch (error) {
     const message = `Test OpenCV błąd: ${errorToMessage(error)}`;
     setStatus(message);
@@ -888,6 +1002,7 @@ async function refreshDiagnostics(): Promise<void> {
   diagSecure.textContent = window.isSecureContext ? "TAK" : "NIE";
   diagMedia.textContent = typeof navigator.mediaDevices?.getUserMedia === "function" ? "TAK" : "NIE";
   diagCameraLive.textContent = stream === null ? "NIE" : "TAK";
+  diagMode.textContent = processingMode === "opencv" ? "OpenCV" : "Lite";
   diagWebGl.textContent = threeState === null ? "NIE" : "TAK";
   diagOpenCv.textContent = getOpenCvStateLabel();
   diagPermission.textContent = await getCameraPermissionState();

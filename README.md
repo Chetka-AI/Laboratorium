@@ -24,6 +24,7 @@ W telefonie Android otwórz:
 - wykonuje triangulację i rysuje chmurę punktów 3D (Three.js)
 - ma mobilny interfejs z zakładkami: `Podgląd`, `Ustawienia`, `Widok 3D`
 - ma zakładkę `Diagnostyka` z testem kamery i testem OpenCV
+- startuje od razu w `trybie lite` (bez czekania na OpenCV), a OpenCV można aktywować ręcznie
 
 ### Rozwiązywanie problemów (Android)
 
@@ -34,6 +35,7 @@ W telefonie Android otwórz:
 - W zakładce `Diagnostyka` użyj przycisku `Test dostępu do kamery`:
   - powinien wymusić okno z prośbą o uprawnienia,
   - jeśli nie ma okna, zwykle URL nie jest secure context albo przeglądarka blokuje kamerę.
+- Jeśli telefon zawiesza się na ładowaniu OpenCV, korzystaj z `trybu lite` i uruchamiaj OpenCV tylko przyciskiem `Test ładowania OpenCV`.
 - W aplikacji komunikat błędu jest widoczny na dole ekranu w polu statusu.
 
 ### Uwaga
