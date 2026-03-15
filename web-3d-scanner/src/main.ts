@@ -69,6 +69,7 @@ interface ReconstructionResult {
 }
 
 type ProcessingMode = "lite" | "opencv";
+type OpenCvProbeState = "idle" | "running" | "ok" | "error";
 
 interface ScanSettings {
   intervalMs: number;
@@ -220,6 +221,7 @@ const settings: ScanSettings = {
 const cloudData: number[] = [];
 const maxCloudPoints = 6000;
 const diagnosticLines: string[] = [];
+const ENABLE_EXPERIMENTAL_MAIN_THREAD_OPENCV = false;
 
 let captureTimerId: number | null = null;
 let isStarting = false;
@@ -234,6 +236,8 @@ let orb: CvORB | null = null;
 let matcher: CvBFMatcher | null = null;
 let threeState: ThreeCloudState | null = null;
 let processingMode: ProcessingMode = "lite";
+let openCvProbeState: OpenCvProbeState = "idle";
+let openCvProbeInfo = "nie testowano";
 
 setupTabs();
 setupSettings();
@@ -966,24 +970,48 @@ async function runCameraPermissionTest(): Promise<void> {
 }
 
 async function runOpenCvTest(): Promise<void> {
+  if (openCvProbeState === "running") {
+    return;
+  }
+
+  openCvProbeState = "running";
+  openCvProbeInfo = "test trwa";
   setStatus("Test OpenCV: ładowanie...");
+  void refreshDiagnostics();
   try {
-    const runtime = await ensureCvRuntime(35000);
-    if (orb === null) {
-      orb = new runtime.ORB(1600);
-    }
-    if (matcher === null) {
-      matcher = new runtime.BFMatcher(runtime.NORM_HAMMING, true);
+    const probe = await probeOpenCvInWorker(45000);
+    if (!probe.ok) {
+      openCvProbeState = "error";
+      openCvProbeInfo = probe.message;
+      throw new Error(probe.message);
     }
 
-    processingMode = "opencv";
-    previousLiteGray = null;
-    releaseFrame(previousFrame);
-    previousFrame = null;
+    openCvProbeState = "ok";
+    openCvProbeInfo = `${Math.round(probe.durationMs)} ms`;
+    appendDiagnosticLine(`OpenCV worker: test OK (${Math.round(probe.durationMs)} ms).`);
 
-    setStatus("OpenCV gotowe. Włączony tryb OpenCV.");
-    appendDiagnosticLine("OpenCV: test OK, aktywowano tryb OpenCV.");
+    if (ENABLE_EXPERIMENTAL_MAIN_THREAD_OPENCV) {
+      const runtime = await ensureCvRuntime(35000);
+      if (orb === null) {
+        orb = new runtime.ORB(1600);
+      }
+      if (matcher === null) {
+        matcher = new runtime.BFMatcher(runtime.NORM_HAMMING, true);
+      }
+
+      processingMode = "opencv";
+      previousLiteGray = null;
+      releaseFrame(previousFrame);
+      previousFrame = null;
+      setStatus("OpenCV gotowe. Włączony tryb OpenCV (eksperymentalny).");
+      appendDiagnosticLine("Aktywowano OpenCV na głównym wątku.");
+    } else {
+      setStatus("OpenCV dostępne w teście worker. Tryb skanowania pozostaje lite (bez zawieszeń).");
+      appendDiagnosticLine("OpenCV na głównym wątku wyłączone dla stabilności mobilnej.");
+    }
   } catch (error) {
+    openCvProbeState = "error";
+    openCvProbeInfo = errorToMessage(error);
     const message = `Test OpenCV błąd: ${errorToMessage(error)}`;
     setStatus(message);
     appendDiagnosticLine(message);
@@ -1011,6 +1039,15 @@ async function refreshDiagnostics(): Promise<void> {
 function getOpenCvStateLabel(): string {
   if (cvApi !== null) {
     return "gotowe";
+  }
+  if (openCvProbeState === "running") {
+    return "test worker: trwa";
+  }
+  if (openCvProbeState === "ok") {
+    return `test worker: OK (${openCvProbeInfo})`;
+  }
+  if (openCvProbeState === "error") {
+    return `test worker: błąd (${openCvProbeInfo})`;
   }
   if (cvLoadPromise !== null) {
     return "ładowanie";
@@ -1056,6 +1093,59 @@ async function ensureCvRuntime(timeoutMs: number): Promise<CvRuntime> {
   }
 
   return cvLoadPromise;
+}
+
+async function probeOpenCvInWorker(
+  timeoutMs: number
+): Promise<{ ok: boolean; message: string; durationMs: number }> {
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL("./opencvProbeWorker.ts", import.meta.url), {
+      type: "module",
+    });
+    const startedAt = performance.now();
+    let done = false;
+
+    const finish = (result: { ok: boolean; message: string; durationMs: number }): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      worker.terminate();
+      resolve(result);
+    };
+
+    const timer = window.setTimeout(() => {
+      finish({
+        ok: false,
+        message: "timeout podczas testu worker",
+        durationMs: performance.now() - startedAt,
+      });
+    }, timeoutMs);
+
+    worker.onmessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; ok?: boolean; reason?: string; durationMs?: number };
+      if (data.type !== "probe-result") {
+        return;
+      }
+      window.clearTimeout(timer);
+      finish({
+        ok: data.ok === true,
+        message: data.reason ?? "",
+        durationMs: typeof data.durationMs === "number" ? data.durationMs : performance.now() - startedAt,
+      });
+    };
+
+    worker.onerror = (event: ErrorEvent) => {
+      window.clearTimeout(timer);
+      finish({
+        ok: false,
+        message: event.message || "błąd worker OpenCV",
+        durationMs: performance.now() - startedAt,
+      });
+    };
+
+    worker.postMessage({ type: "probe" });
+  });
 }
 
 async function loadCvRuntime(timeoutMs: number): Promise<CvRuntime> {
