@@ -10,40 +10,75 @@
 html,
 body,
 #app {
-  margin: 0;
-  min-height: 100%;
+  height: 100%;
   width: 100%;
+  margin: 0;
 }
 
 body {
   background: #070b14;
   color: #ebf2ff;
+  overflow: hidden;
 }
 
-.layout {
+.app-shell {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: 12px;
-  min-height: 100svh;
-  padding: 12px;
-}
-
-.top h1 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.top p {
-  margin: 6px 0 0;
-  color: #aab7d0;
-  font-size: 0.92rem;
-}
-
-.controls {
-  display: flex;
-  flex-wrap: wrap;
   gap: 10px;
-  align-items: center;
+  height: 100dvh;
+  padding: 10px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.app-header p {
+  margin: 4px 0 0;
+  color: #b4c2de;
+  font-size: 0.84rem;
+}
+
+.tab-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.tab-btn {
+  border: 1px solid #2b3c5f;
+  background: #101a2e;
+  color: #e1ebff;
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 0.88rem;
+}
+
+.tab-btn.is-active {
+  background: #1f7aff;
+  border-color: #1f7aff;
+  color: #fff;
+}
+
+.tab-content {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.tab-panel {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.tab-panel.is-active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .btn {
@@ -63,36 +98,51 @@ body {
   opacity: 0.5;
 }
 
-.range-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: #b7c4df;
-  font-size: 0.86rem;
-  min-width: 190px;
-}
-
-.range-wrap input {
-  width: 100%;
-}
-
-.panels {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 1fr;
-}
-
-.panel {
+.card {
   background: #0d1525;
   border: 1px solid #1d2a43;
   border-radius: 12px;
   padding: 10px;
 }
 
-.panel h2 {
+.card h2 {
   margin: 0 0 8px;
   font-size: 0.95rem;
   color: #d4e2fb;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 500px) {
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+  color: #b8c7e3;
+  font-size: 0.86rem;
+}
+
+.setting:last-child {
+  margin-bottom: 0;
+}
+
+.setting strong {
+  color: #f2f6ff;
+  font-size: 0.92rem;
+}
+
+.setting input {
+  width: 100%;
 }
 
 .camera-stack {
@@ -115,14 +165,39 @@ body {
 #overlay {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .three-host {
   width: 100%;
-  min-height: 230px;
+  min-height: 260px;
+  height: 100%;
   border-radius: 10px;
   overflow: hidden;
   background: #02060e;
+}
+
+.cloud-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cloud-card {
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 8px;
+  min-height: 0;
+}
+
+.note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #a8badb;
+}
+
+.status-wrap {
+  min-height: 0;
 }
 
 .status {
@@ -134,10 +209,4 @@ body {
   padding: 10px;
   color: #b9cae9;
   font-size: 0.85rem;
-}
-
-@media (min-width: 900px) {
-  .panels {
-    grid-template-columns: 1fr 1fr;
-  }
 }
