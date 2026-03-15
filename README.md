@@ -38,6 +38,7 @@ W telefonie Android otwórz:
   - jeśli nie ma okna, zwykle URL nie jest secure context albo przeglądarka blokuje kamerę.
 - Jeśli telefon zawiesza się na ładowaniu OpenCV, korzystaj z `trybu lite` i uruchamiaj OpenCV tylko przyciskiem `Test ładowania OpenCV`.
 - W obecnej wersji produkcyjnej skanowanie działa stabilnie w trybie `lite`; test OpenCV służy diagnostyce kompatybilności urządzenia.
+- Jeśli test OpenCV zwróci timeout, aplikacja automatycznie oznaczy OpenCV jako niewspierane i pozostanie w stabilnym trybie `lite`.
 - W aplikacji komunikat błędu jest widoczny na dole ekranu w polu statusu.
 
 ### Uwaga

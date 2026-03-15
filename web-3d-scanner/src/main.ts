@@ -238,6 +238,7 @@ let threeState: ThreeCloudState | null = null;
 let processingMode: ProcessingMode = "lite";
 let openCvProbeState: OpenCvProbeState = "idle";
 let openCvProbeInfo = "nie testowano";
+let openCvUnsupportedReason: string | null = null;
 
 setupTabs();
 setupSettings();
@@ -973,13 +974,20 @@ async function runOpenCvTest(): Promise<void> {
   if (openCvProbeState === "running") {
     return;
   }
+  if (openCvUnsupportedReason !== null) {
+    const message = `OpenCV oznaczone jako niewspierane: ${openCvUnsupportedReason}`;
+    setStatus(message);
+    appendDiagnosticLine(message);
+    void refreshDiagnostics();
+    return;
+  }
 
   openCvProbeState = "running";
   openCvProbeInfo = "test trwa";
   setStatus("Test OpenCV: ładowanie...");
   void refreshDiagnostics();
   try {
-    const probe = await probeOpenCvInWorker(45000);
+    const probe = await probeOpenCvInWorker(90000);
     if (!probe.ok) {
       openCvProbeState = "error";
       openCvProbeInfo = probe.message;
@@ -1012,6 +1020,12 @@ async function runOpenCvTest(): Promise<void> {
   } catch (error) {
     openCvProbeState = "error";
     openCvProbeInfo = errorToMessage(error);
+    if (openCvProbeInfo.includes("timeout")) {
+      openCvUnsupportedReason = "timeout ładowania OpenCV na urządzeniu";
+      diagOpencvButton.disabled = true;
+      diagOpencvButton.textContent = "OpenCV niewspierane";
+      appendDiagnosticLine("OpenCV oznaczone jako niewspierane na tym urządzeniu.");
+    }
     const message = `Test OpenCV błąd: ${errorToMessage(error)}`;
     setStatus(message);
     appendDiagnosticLine(message);
@@ -1037,6 +1051,9 @@ async function refreshDiagnostics(): Promise<void> {
 }
 
 function getOpenCvStateLabel(): string {
+  if (openCvUnsupportedReason !== null) {
+    return `niewspierane (${openCvUnsupportedReason})`;
+  }
   if (cvApi !== null) {
     return "gotowe";
   }
