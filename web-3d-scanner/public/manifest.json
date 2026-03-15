@@ -1,0 +1,19 @@
+{
+  "name": "3D Skaner - Mobilne Skanowanie",
+  "short_name": "3D Skaner",
+  "description": "Skanuj obiekty kamerą telefonu i twórz modele 3D",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060a13",
+  "theme_color": "#060a13",
+  "orientation": "portrait",
+  "categories": ["utilities", "photo"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
