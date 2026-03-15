@@ -1,12 +1,59 @@
 import "./style.css";
 import * as THREE from "three";
-import * as cvModule from "@techstark/opencv-js";
 
-type CvRuntime = typeof cvModule & { onRuntimeInitialized?: () => void };
-type CvMat = InstanceType<typeof cvModule.Mat>;
-type CvKeyPointVector = InstanceType<typeof cvModule.KeyPointVector>;
-type CvORB = InstanceType<typeof cvModule.ORB>;
-type CvBFMatcher = InstanceType<typeof cvModule.BFMatcher>;
+type CvMat = {
+  delete(): void;
+  empty(): boolean;
+  cols: number;
+  data64F: Float64Array;
+  floatAt(row: number, col: number): number;
+  ucharAt(row: number, col: number): number;
+};
+
+type CvKeyPointVector = {
+  delete(): void;
+  get(index: number): { pt: { x: number; y: number } };
+};
+
+type CvDMatchVector = {
+  delete(): void;
+  size(): number;
+  get(index: number): { queryIdx: number; trainIdx: number; distance: number };
+};
+
+type CvORB = {
+  detectAndCompute(
+    image: CvMat,
+    mask: CvMat,
+    keypoints: CvKeyPointVector,
+    descriptors: CvMat
+  ): void;
+};
+
+type CvBFMatcher = {
+  match(query: CvMat, train: CvMat, matches: CvDMatchVector): void;
+};
+
+type CvRuntime = {
+  Mat: new (...args: unknown[]) => CvMat;
+  ORB: new (...args: unknown[]) => CvORB;
+  BFMatcher: new (...args: unknown[]) => CvBFMatcher;
+  KeyPointVector: new (...args: unknown[]) => CvKeyPointVector;
+  DMatchVector: new (...args: unknown[]) => CvDMatchVector;
+  COLOR_RGBA2GRAY: number;
+  NORM_HAMMING: number;
+  RANSAC: number;
+  CV_32FC2: number;
+  CV_64F: number;
+  imread(source: HTMLCanvasElement): CvMat;
+  cvtColor(src: CvMat, dst: CvMat, code: number): void;
+  matFromArray(rows: number, cols: number, type: number, data: number[]): CvMat;
+  findEssentialMat(...args: unknown[]): CvMat;
+  recoverPose(...args: unknown[]): number;
+  gemm(...args: unknown[]): void;
+  triangulatePoints(...args: unknown[]): void;
+  onRuntimeInitialized?: () => void;
+};
 
 interface FrameFeatures {
   keypoints: CvKeyPointVector;
@@ -41,13 +88,14 @@ app.innerHTML = `
   <main class="app-shell">
     <header class="app-header">
       <h1>Web 3D Scanner</h1>
-      <p>Wersja mobilna: zakładki i czytelne ustawienia.</p>
+      <p>Android / Web: zakładki + diagnostyka działania.</p>
     </header>
 
     <nav class="tab-bar" aria-label="Sekcje aplikacji">
       <button class="tab-btn is-active" data-tab="preview">Podgląd</button>
       <button class="tab-btn" data-tab="settings">Ustawienia</button>
       <button class="tab-btn" data-tab="cloud">Widok 3D</button>
+      <button class="tab-btn" data-tab="diagnostics">Diagnostyka</button>
     </nav>
 
     <section class="tab-content">
@@ -57,9 +105,8 @@ app.innerHTML = `
           <button id="stop-btn" class="btn secondary" disabled>Stop</button>
           <button id="clear-overlay-btn" class="btn secondary">Wyczyść punkty 2D</button>
         </section>
-
         <section class="card">
-          <h2>Kamera + śledzenie punktów</h2>
+          <h2>Kamera + punkty śledzenia</h2>
           <div class="camera-stack">
             <video id="camera" playsinline autoplay muted></video>
             <canvas id="overlay"></canvas>
@@ -75,15 +122,13 @@ app.innerHTML = `
             <strong id="interval-value">600 ms</strong>
             <input id="interval-range" type="range" min="200" max="1500" step="50" value="600" />
           </label>
-
           <label class="setting">
-            <span>Próg dopasowania cech (niżej = ostrzej)</span>
+            <span>Próg dopasowania cech</span>
             <strong id="distance-value">60</strong>
             <input id="distance-range" type="range" min="20" max="120" step="2" value="60" />
           </label>
-
           <label class="setting">
-            <span>Maksymalna liczba dopasowań na klatkę</span>
+            <span>Maksymalna liczba dopasowań</span>
             <strong id="matches-value">220</strong>
             <input id="matches-range" type="range" min="60" max="400" step="10" value="220" />
           </label>
@@ -100,10 +145,33 @@ app.innerHTML = `
           <p id="three-note" class="note"></p>
         </section>
       </article>
+
+      <article class="tab-panel" data-panel="diagnostics">
+        <section class="card diagnostics-actions">
+          <button id="diag-refresh-btn" class="btn secondary">Odśwież diagnostykę</button>
+          <button id="diag-camera-btn" class="btn secondary">Test dostępu do kamery</button>
+          <button id="diag-opencv-btn" class="btn secondary">Test ładowania OpenCV</button>
+        </section>
+        <section class="card">
+          <h2>Stan środowiska</h2>
+          <ul class="diag-list">
+            <li><span>Secure context</span><strong id="diag-secure">-</strong></li>
+            <li><span>Obsługa getUserMedia</span><strong id="diag-media">-</strong></li>
+            <li><span>Stan uprawnień kamery</span><strong id="diag-permission">-</strong></li>
+            <li><span>Kamera aktywna</span><strong id="diag-camera-live">-</strong></li>
+            <li><span>OpenCV</span><strong id="diag-opencv">-</strong></li>
+            <li><span>WebGL / Three</span><strong id="diag-webgl">-</strong></li>
+          </ul>
+        </section>
+        <section class="card">
+          <h2>Log diagnostyczny</h2>
+          <pre id="diag-log" class="diag-log">Brak wpisów.</pre>
+        </section>
+      </article>
     </section>
 
     <footer class="status-wrap">
-      <pre id="status" class="status">Gotowe. Przejdź do zakładki Podgląd i kliknij Start skanowania.</pre>
+      <pre id="status" class="status">Gotowe. Kliknij Start albo przejdź do Diagnostyka.</pre>
     </footer>
   </main>
 `;
@@ -124,20 +192,30 @@ const threeNote = requireElement<HTMLParagraphElement>("#three-note");
 const video = requireElement<HTMLVideoElement>("#camera");
 const overlay = requireElement<HTMLCanvasElement>("#overlay");
 const overlayCtx = requireCanvasContext(overlay);
-
+const diagRefreshButton = requireElement<HTMLButtonElement>("#diag-refresh-btn");
+const diagCameraButton = requireElement<HTMLButtonElement>("#diag-camera-btn");
+const diagOpencvButton = requireElement<HTMLButtonElement>("#diag-opencv-btn");
+const diagLog = requireElement<HTMLPreElement>("#diag-log");
+const diagSecure = requireElement<HTMLElement>("#diag-secure");
+const diagMedia = requireElement<HTMLElement>("#diag-media");
+const diagPermission = requireElement<HTMLElement>("#diag-permission");
+const diagCameraLive = requireElement<HTMLElement>("#diag-camera-live");
+const diagOpenCv = requireElement<HTMLElement>("#diag-opencv");
+const diagWebGl = requireElement<HTMLElement>("#diag-webgl");
 const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab-btn"));
 const tabPanels = Array.from(document.querySelectorAll<HTMLElement>(".tab-panel"));
 
 const captureCanvas = document.createElement("canvas");
 const captureCtx = requireCanvasContext(captureCanvas);
-
-const maxCloudPoints = 6000;
-const cloudData: number[] = [];
 const settings: ScanSettings = {
   intervalMs: Number(intervalRange.value),
   matchDistance: Number(distanceRange.value),
   maxMatches: Number(matchesRange.value),
 };
+
+const cloudData: number[] = [];
+const maxCloudPoints = 6000;
+const diagnosticLines: string[] = [];
 
 let captureTimerId: number | null = null;
 let isStarting = false;
@@ -145,6 +223,8 @@ let isProcessingFrame = false;
 let stream: MediaStream | null = null;
 let previousFrame: FrameFeatures | null = null;
 let cvApi: CvRuntime | null = null;
+let cvLoadPromise: Promise<CvRuntime> | null = null;
+let cvLoadError: string | null = null;
 let orb: CvORB | null = null;
 let matcher: CvBFMatcher | null = null;
 let threeState: ThreeCloudState | null = null;
@@ -152,25 +232,18 @@ let threeState: ThreeCloudState | null = null;
 setupTabs();
 setupSettings();
 setupThree();
+setupControls();
 updateControlState();
-setStatus("Inicjalizacja OpenCV.js w tle...");
-void warmupCv();
+appendDiagnosticLine("Aplikacja uruchomiona.");
+void refreshDiagnostics();
 
-startButton.addEventListener("click", () => {
-  void startScanning();
-});
+const diagnosticsTimer = window.setInterval(() => {
+  void refreshDiagnostics();
+}, 4000);
 
-stopButton.addEventListener("click", () => {
-  stopScanning("Skanowanie zatrzymane.");
-});
-
-clearOverlayButton.addEventListener("click", () => {
-  clearOverlay();
-});
-
-clearCloudButton.addEventListener("click", () => {
-  clearCloud();
-  setStatus("Wyczyszczono chmurę 3D.");
+window.addEventListener("beforeunload", () => {
+  window.clearInterval(diagnosticsTimer);
+  stopScanning();
 });
 
 function setupTabs(): void {
@@ -197,7 +270,7 @@ function setupTabs(): void {
 }
 
 function setupSettings(): void {
-  const applySettingsToLabels = (): void => {
+  const updateLabels = (): void => {
     intervalValue.textContent = `${settings.intervalMs} ms`;
     distanceValue.textContent = `${settings.matchDistance}`;
     matchesValue.textContent = `${settings.maxMatches}`;
@@ -205,7 +278,7 @@ function setupSettings(): void {
 
   intervalRange.addEventListener("input", () => {
     settings.intervalMs = Number(intervalRange.value);
-    applySettingsToLabels();
+    updateLabels();
     if (captureTimerId !== null) {
       restartCaptureLoop();
     }
@@ -213,15 +286,38 @@ function setupSettings(): void {
 
   distanceRange.addEventListener("input", () => {
     settings.matchDistance = Number(distanceRange.value);
-    applySettingsToLabels();
+    updateLabels();
   });
 
   matchesRange.addEventListener("input", () => {
     settings.maxMatches = Number(matchesRange.value);
-    applySettingsToLabels();
+    updateLabels();
   });
 
-  applySettingsToLabels();
+  updateLabels();
+}
+
+function setupControls(): void {
+  startButton.addEventListener("click", () => {
+    void startScanning();
+  });
+  stopButton.addEventListener("click", () => {
+    stopScanning("Skanowanie zatrzymane.");
+  });
+  clearOverlayButton.addEventListener("click", clearOverlay);
+  clearCloudButton.addEventListener("click", () => {
+    clearCloud();
+    setStatus("Wyczyszczono chmurę 3D.");
+  });
+  diagRefreshButton.addEventListener("click", () => {
+    void refreshDiagnostics();
+  });
+  diagCameraButton.addEventListener("click", () => {
+    void runCameraPermissionTest();
+  });
+  diagOpencvButton.addEventListener("click", () => {
+    void runOpenCvTest();
+  });
 }
 
 function setupThree(): void {
@@ -232,7 +328,6 @@ function setupThree(): void {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b1220);
-
     const camera = new THREE.PerspectiveCamera(62, 1, 0.01, 100);
     camera.position.set(0, 0, 3.4);
 
@@ -275,7 +370,8 @@ function setupThree(): void {
     threeNote.textContent = "Widok 3D aktywny.";
   } catch (error) {
     threeState = null;
-    threeNote.textContent = `Three.js niedostępne na tym urządzeniu: ${errorToMessage(error)}`;
+    threeNote.textContent = `Three.js niedostępne: ${errorToMessage(error)}`;
+    appendDiagnosticLine(`Three.js błąd: ${errorToMessage(error)}`);
   }
 }
 
@@ -290,39 +386,22 @@ function resizeThreeRenderer(): void {
   threeState.camera.updateProjectionMatrix();
 }
 
-async function warmupCv(): Promise<void> {
-  try {
-    if (cvApi === null) {
-      cvApi = await ensureCvRuntime(20000);
-      orb = new cvApi.ORB(1600);
-      matcher = new cvApi.BFMatcher(cvApi.NORM_HAMMING, true);
-    }
-    setStatus("OpenCV gotowe. Możesz uruchomić skanowanie.");
-  } catch (error) {
-    setStatus(`OpenCV nie zostało zainicjalizowane: ${errorToMessage(error)}`);
-  }
-}
-
 async function startScanning(): Promise<void> {
   if (captureTimerId !== null || isStarting) {
     return;
   }
+
   if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus("Ta przeglądarka nie wspiera getUserMedia.");
+    setStatus("Przeglądarka nie wspiera getUserMedia.");
+    appendDiagnosticLine("Brak API getUserMedia.");
     return;
   }
 
   isStarting = true;
   updateControlState();
-  setStatus("Uruchamianie skanowania: OpenCV + kamera...");
+  setStatus("Krok 1/3: proszę o dostęp do kamery...");
 
   try {
-    if (cvApi === null || orb === null || matcher === null) {
-      cvApi = await ensureCvRuntime(25000);
-      orb = new cvApi.ORB(1600);
-      matcher = new cvApi.BFMatcher(cvApi.NORM_HAMMING, true);
-    }
-
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: "environment" },
@@ -336,17 +415,30 @@ async function startScanning(): Promise<void> {
     video.srcObject = stream;
     await video.play();
     await waitForVideoDimensions();
-
     setupFrameSize(video.videoWidth || 640, video.videoHeight || 480);
+    appendDiagnosticLine("Kamera uruchomiona.");
+
+    setStatus("Krok 2/3: ładowanie OpenCV.js...");
+    const runtime = await ensureCvRuntime(35000);
+    if (orb === null) {
+      orb = new runtime.ORB(1600);
+    }
+    if (matcher === null) {
+      matcher = new runtime.BFMatcher(runtime.NORM_HAMMING, true);
+    }
+    setStatus("Krok 3/3: start analizy obrazu...");
     restartCaptureLoop();
     await processFrame();
-    setStatus("Skanowanie działa. Przesuwaj kamerę powoli wokół obiektu.");
+    setStatus("Skanowanie aktywne. Ruszaj kamerą powoli.");
   } catch (error) {
-    stopScanning(`Błąd startu: ${errorToMessage(error)}`);
-    return;
+    stopScanning();
+    const message = `Błąd startu: ${errorToMessage(error)}`;
+    setStatus(message);
+    appendDiagnosticLine(message);
   } finally {
     isStarting = false;
     updateControlState();
+    void refreshDiagnostics();
   }
 }
 
@@ -475,11 +567,7 @@ function reconstructFromPair(
 
     const filteredMatches: Array<{ queryIdx: number; trainIdx: number; distance: number }> = [];
     for (let i = 0; i < matches.size(); i += 1) {
-      const match = matches.get(i) as {
-        queryIdx: number;
-        trainIdx: number;
-        distance: number;
-      };
+      const match = matches.get(i);
       if (match.distance <= settings.matchDistance) {
         filteredMatches.push(match);
       }
@@ -495,12 +583,8 @@ function reconstructFromPair(
     const currentPointsFlat: number[] = [];
 
     for (const match of selectedMatches) {
-      const prevPoint = (previous.keypoints.get(match.queryIdx) as {
-        pt: { x: number; y: number };
-      }).pt;
-      const currPoint = (current.keypoints.get(match.trainIdx) as {
-        pt: { x: number; y: number };
-      }).pt;
+      const prevPoint = previous.keypoints.get(match.queryIdx).pt;
+      const currPoint = current.keypoints.get(match.trainIdx).pt;
       previousPointsFlat.push(prevPoint.x, prevPoint.y);
       currentPointsFlat.push(currPoint.x, currPoint.y);
     }
@@ -691,8 +775,8 @@ function addToPointCloud(points: number[]): void {
   if (points.length === 0 || threeState === null) {
     return;
   }
-  cloudData.push(...points);
 
+  cloudData.push(...points);
   const maxLength = maxCloudPoints * 3;
   if (cloudData.length > maxLength) {
     cloudData.splice(0, cloudData.length - maxLength);
@@ -715,7 +799,7 @@ function clearCloud(): void {
 
 function drawTrackedPoints(points: Array<{ x: number; y: number }>): void {
   clearOverlay();
-  overlayCtx.fillStyle = "rgba(70, 255, 140, 0.92)";
+  overlayCtx.fillStyle = "rgba(70, 255, 140, 0.9)";
   const limit = Math.min(points.length, 220);
   for (let i = 0; i < limit; i += 1) {
     const point = points[i];
@@ -748,39 +832,169 @@ function waitForVideoDimensions(): Promise<void> {
     return Promise.resolve();
   }
   return new Promise<void>((resolve) => {
-    const listener = (): void => {
-      video.removeEventListener("loadedmetadata", listener);
+    const onReady = (): void => {
+      video.removeEventListener("loadedmetadata", onReady);
       resolve();
     };
-    video.addEventListener("loadedmetadata", listener, { once: true });
+    video.addEventListener("loadedmetadata", onReady, { once: true });
   });
 }
 
+async function runCameraPermissionTest(): Promise<void> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    appendDiagnosticLine("Test kamery: getUserMedia niedostępne.");
+    setStatus("Brak API getUserMedia.");
+    void refreshDiagnostics();
+    return;
+  }
+
+  setStatus("Test kamery: proszę o dostęp...");
+  try {
+    const testStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    testStream.getTracks().forEach((track) => track.stop());
+    appendDiagnosticLine("Test kamery: OK (uprawnienie działa).");
+    setStatus("Test kamery zakończony powodzeniem.");
+  } catch (error) {
+    const message = `Test kamery błąd: ${errorToMessage(error)}`;
+    appendDiagnosticLine(message);
+    setStatus(message);
+  } finally {
+    void refreshDiagnostics();
+  }
+}
+
+async function runOpenCvTest(): Promise<void> {
+  setStatus("Test OpenCV: ładowanie...");
+  try {
+    await ensureCvRuntime(35000);
+    setStatus("Test OpenCV: OK.");
+    appendDiagnosticLine("OpenCV: test zakończony sukcesem.");
+  } catch (error) {
+    const message = `Test OpenCV błąd: ${errorToMessage(error)}`;
+    setStatus(message);
+    appendDiagnosticLine(message);
+  } finally {
+    void refreshDiagnostics();
+  }
+}
+
 function updateControlState(): void {
-  startButton.disabled = captureTimerId !== null || isStarting;
-  stopButton.disabled = captureTimerId === null && !isStarting;
+  const running = captureTimerId !== null;
+  startButton.disabled = running || isStarting;
+  stopButton.disabled = !running && !isStarting;
+}
+
+async function refreshDiagnostics(): Promise<void> {
+  diagSecure.textContent = window.isSecureContext ? "TAK" : "NIE";
+  diagMedia.textContent = typeof navigator.mediaDevices?.getUserMedia === "function" ? "TAK" : "NIE";
+  diagCameraLive.textContent = stream === null ? "NIE" : "TAK";
+  diagWebGl.textContent = threeState === null ? "NIE" : "TAK";
+  diagOpenCv.textContent = getOpenCvStateLabel();
+  diagPermission.textContent = await getCameraPermissionState();
+}
+
+function getOpenCvStateLabel(): string {
+  if (cvApi !== null) {
+    return "gotowe";
+  }
+  if (cvLoadPromise !== null) {
+    return "ładowanie";
+  }
+  if (cvLoadError !== null) {
+    return `błąd: ${cvLoadError}`;
+  }
+  return "niezaładowane";
+}
+
+async function getCameraPermissionState(): Promise<string> {
+  if (!("permissions" in navigator) || typeof navigator.permissions.query !== "function") {
+    return "API niedostępne";
+  }
+
+  try {
+    const status = await navigator.permissions.query({
+      name: "camera" as PermissionName,
+    });
+    return status.state;
+  } catch {
+    return "brak danych";
+  }
 }
 
 async function ensureCvRuntime(timeoutMs: number): Promise<CvRuntime> {
-  const runtime = cvModule as unknown as CvRuntime & { then?: unknown };
+  if (cvApi !== null) {
+    return cvApi;
+  }
+
+  if (cvLoadPromise === null) {
+    cvLoadError = null;
+    cvLoadPromise = loadCvRuntime(timeoutMs)
+      .then((runtime) => {
+        cvApi = runtime;
+        return runtime;
+      })
+      .catch((error: unknown) => {
+        cvLoadError = errorToMessage(error);
+        cvLoadPromise = null;
+        throw error;
+      });
+  }
+
+  return cvLoadPromise;
+}
+
+async function loadCvRuntime(timeoutMs: number): Promise<CvRuntime> {
+  appendDiagnosticLine("OpenCV: rozpoczęto dynamiczny import.");
+  const imported = await withTimeout(
+    import("@techstark/opencv-js"),
+    timeoutMs,
+    "Przekroczono czas importu OpenCV."
+  );
+
+  const runtime = pickCvRuntime(imported);
   if (typeof runtime.Mat === "function") {
+    appendDiagnosticLine("OpenCV: gotowe (Mat dostępny po imporcie).");
     return runtime;
   }
 
-  if (typeof runtime.then === "function") {
-    const thenable = runtime as unknown as Promise<CvRuntime>;
-    const loaded = await withTimeout(thenable, timeoutMs, "Przekroczono czas inicjalizacji OpenCV.js.");
-    if (typeof loaded.Mat === "function") {
-      return loaded;
+  const maybeThenable = runtime as CvRuntime & { then?: unknown };
+  if (typeof maybeThenable.then === "function") {
+    const resolved = await withTimeout(
+      Promise.resolve(maybeThenable as unknown as Promise<CvRuntime>),
+      timeoutMs,
+      "Przekroczono czas inicjalizacji OpenCV."
+    );
+    if (typeof resolved.Mat === "function") {
+      appendDiagnosticLine("OpenCV: gotowe (thenable).");
+      return resolved;
     }
   }
 
-  return waitForCvPolling(runtime, timeoutMs);
+  const polled = await waitForCvPolling(runtime, timeoutMs);
+  appendDiagnosticLine("OpenCV: gotowe (polling).");
+  return polled;
 }
 
-async function waitForCvPolling(runtime: CvRuntime, timeoutMs: number): Promise<CvRuntime> {
+function pickCvRuntime(imported: unknown): CvRuntime {
+  const moduleNamespace = imported as { default?: unknown };
+  const defaultExport = moduleNamespace.default;
+  if (isCvLike(defaultExport)) {
+    return defaultExport as CvRuntime;
+  }
+  return imported as CvRuntime;
+}
+
+function isCvLike(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const maybeCv = value as Record<string, unknown>;
+  return typeof maybeCv.Mat === "function" || typeof maybeCv.then === "function";
+}
+
+function waitForCvPolling(runtime: CvRuntime, timeoutMs: number): Promise<CvRuntime> {
   if (typeof runtime.Mat === "function") {
-    return runtime;
+    return Promise.resolve(runtime);
   }
 
   return new Promise<CvRuntime>((resolve, reject) => {
@@ -814,10 +1028,10 @@ async function waitForCvPolling(runtime: CvRuntime, timeoutMs: number): Promise<
         return;
       }
       if (performance.now() - startedAt > timeoutMs) {
-        finish(new Error("Przekroczono czas oczekiwania na OpenCV.js."));
+        finish(new Error("OpenCV nie zainicjalizowało się na czas."));
         return;
       }
-      window.setTimeout(poll, 60);
+      window.setTimeout(poll, 70);
     };
 
     poll();
@@ -825,15 +1039,27 @@ async function waitForCvPolling(runtime: CvRuntime, timeoutMs: number): Promise<
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
-  let timeoutHandle = 0;
+  let timeoutId = 0;
   const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutHandle = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
   });
+
   try {
     return await Promise.race([promise, timeoutPromise]);
   } finally {
-    window.clearTimeout(timeoutHandle);
+    window.clearTimeout(timeoutId);
   }
+}
+
+function appendDiagnosticLine(message: string): void {
+  const timestamp = new Date().toLocaleTimeString("pl-PL", { hour12: false });
+  diagnosticLines.unshift(`[${timestamp}] ${message}`);
+  if (diagnosticLines.length > 40) {
+    diagnosticLines.splice(40);
+  }
+  diagLog.textContent = diagnosticLines.join("\n");
 }
 
 function setStatus(message: string): void {

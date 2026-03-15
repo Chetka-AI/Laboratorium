@@ -23,6 +23,7 @@ W telefonie Android otwórz:
 - dopasowuje cechy i estymuje ruch kamery (`findEssentialMat`, `recoverPose`)
 - wykonuje triangulację i rysuje chmurę punktów 3D (Three.js)
 - ma mobilny interfejs z zakładkami: `Podgląd`, `Ustawienia`, `Widok 3D`
+- ma zakładkę `Diagnostyka` z testem kamery i testem OpenCV
 
 ### Rozwiązywanie problemów (Android)
 
@@ -30,6 +31,9 @@ W telefonie Android otwórz:
   - uruchamiasz aplikację z `http://127.0.0.1:5173` (nie z przypadkowego URL),
   - przeglądarka ma przyznane uprawnienie do kamery,
   - po zmianie uprawnień odświeżyłeś stronę.
+- W zakładce `Diagnostyka` użyj przycisku `Test dostępu do kamery`:
+  - powinien wymusić okno z prośbą o uprawnienia,
+  - jeśli nie ma okna, zwykle URL nie jest secure context albo przeglądarka blokuje kamerę.
 - W aplikacji komunikat błędu jest widoczny na dole ekranu w polu statusu.
 
 ### Uwaga
